@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="de" class="">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Heinrich Zeiterfassung</title>
+    
+    <!-- PWA Manifest & Theme -->
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#000000">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+    <meta name="apple-mobile-web-app-title" content="HZ Erfassung">
+    <link rel="apple-touch-icon" href="https://placehold.co/180x180/0d9488/FFFFFF?text=HZ">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'></script>
+    <script>
+        tailwind.config = { darkMode: 'class' }
+    </script>
+    <style>
+        body { font-family: 'Roboto Mono', monospace; }
+        .spinner-main {
+            border: 4px solid rgba(0, 0, 0, 0.1);
+            width: 20px;
+            height: 20px;
+            border-radius: 50%;
+            border-left-color: #0d9488;
+            animation: spin 1s ease infinite;
+            display: inline-block;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        #cameraOverlay { background-color: rgba(0,0,0,0.9); }
+        #cameraTarget {
+            border: 3px solid white;
+            box-shadow: 0 0 0 9999px rgba(0,0,0,0.6);
+        }
+    </style>
+</head>
+<body class="bg-gray-100 dark:bg-black text-gray-900 dark:text-gray-200">
+
+    <div class="container mx-auto p-4 md:p-8 max-w-4xl">
+        <header class="mb-8 flex justify-between items-center">
+            <div>
+                <h1 class="text-4xl font-bold text-gray-900 dark:text-white">Heinrich Zeiterfassung</h1>
+                <p class="text-gray-600 dark:text-gray-400 mt-2">Effiziente Stundenerfassung</p>
+            </div>
+            <button id="darkModeToggle" class="p-2 rounded-full hover:bg-gray-200 dark:hover:bg-gray-800 focus:outline-none">
+                <svg id="moonIcon" class="h-6 w-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M20.354 15.354A9 9 0 018.646 3.646 9.003 9.003 0 0012 21a9.003 9.003 0 008.354-5.646z" /></svg>
+                <svg id="sunIcon" class="h-6 w-6 hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 3v1m0 16v1m9-9h-1M4 12H3m15.364 6.364l-.707-.707M6.343 6.343l-.707-.707m12.728 0l-.707.707M6.343 17.657l-.707.707M16 12a4 4 0 11-8 0 4 4 0 018 0z" /></svg>
+            </button>
+        </header>
+
+        <!-- Eingabebereich -->
+        <div class="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700 mb-8">
+            <h2 id="form-title" class="text-2xl font-semibold mb-6 text-gray-900 dark:text-white">Neuer Eintrag</h2>
+            <input type="hidden" id="editingEntryId">
+            
+            <div class="mb-6">
+                <label for="auftragsnummer" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Auftragsnummer</label>
+                <div class="flex gap-2">
+                    <input type="text" id="auftragsnummer" class="flex-grow w-full bg-gray-100 dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md p-3 focus:ring-teal-500 focus:border-teal-500" placeholder="Scannen, auswählen oder eingeben...">
+                    <input type="file" id="imageUpload" accept="image/*" class="hidden">
+                    <button id="selectOrderButton" class="p-3 bg-sky-600 text-white rounded-md hover:bg-sky-700" title="Vorhandene Auftragsnummer auswählen">
+                        <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M8.25 6.75h12M8.25 12h12m-12 5.25h12M3.75 6.75h.007v.008H3.75V6.75zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zM3.75 12h.007v.008H3.75V12zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0zm-.375 5.25h.007v.008H3.75v-.008zm.375 0a.375.375 0 11-.75 0 .375.375 0 01.75 0z" /></svg>
+                    </button>
+                    <button id="uploadButton" class="p-3 bg-gray-600 text-white rounded-md hover:bg-gray-700" title="Von Bild hochladen">
+                         <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5m-13.5-9L12 3m0 0l4.5 4.5M12 3v13.5" /></svg>
+                    </button>
+                    <button id="startCameraButton" class="p-3 bg-teal-600 text-white rounded-md hover:bg-teal-700" title="Live-Kamera scannen">
+                        <svg class="w-6 h-6" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" d="M6.827 6.175A2.31 2.31 0 015.186 7.23c-.38.054-.757.112-1.134.175C2.999 7.58 2.25 8.507 2.25 9.574V18a2.25 2.25 0 002.25 2.25h15A2.25 2.25 0 0021.75 18V9.574c0-1.067-.75-1.994-1.802-2.169a47.865 47.865 0 00-1.134-.175 2.31 2.31 0 01-1.64-1.055l-.822-1.316a2.192 2.192 0 00-1.736-1.039 48.776 48.776 0 00-5.232 0 2.192 2.192 0 00-1.736 1.039l-.821 1.316z" /><path stroke-linecap="round" stroke-linejoin="round" d="M16.5 12.75a4.5 4.5 0 11-9 0 4.5 4.5 0 019 0zM18.75 10.5h.008v.008h-.008V10.5z" /></svg>
+                    </button>
+                </div>
+                 <p id="ocr-status-main" class="text-sm text-gray-500 dark:text-gray-400 mt-2 h-5 flex items-center"></p>
+            </div>
+
+            <div class="space-y-4">
+                 <div>
+                    <label for="beschreibung" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Beschreibung</label>
+                    <input type="text" id="beschreibung" class="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md p-3 focus:ring-teal-500 focus:border-teal-500" placeholder="z.B. Installation Komponente X">
+                </div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
+                     <div>
+                        <label for="dauer" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Dauer (h)</label>
+                        <input type="text" inputmode="decimal" id="dauer" class="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md p-3 focus:ring-teal-500 focus:border-teal-500" placeholder="z.B. 2,5">
+                    </div>
+                    <div>
+                        <label for="stundensatz" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Stundensatz (€)</label>
+                         <select id="stundensatz" class="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md p-3 focus:ring-teal-500 focus:border-teal-500">
+                            <option value="59.50">59,50</option>
+                            <option value="119.00">119,00</option>
+                            <option value="35.00">35,00</option>
+                            <option value="70.00">70,00</option>
+                        </select>
+                    </div>
+                     <div>
+                        <label for="material" class="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Material (€)</label>
+                        <input type="text" inputmode="decimal" id="material" class="w-full bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-700 rounded-md p-3 focus:ring-teal-500 focus:border-teal-500" placeholder="z.B. 120,50">
+                    </div>
+                </div>
+            </div>
+            
+            <div id="form-actions" class="mt-8 flex justify-end items-center gap-4">
+                <button id="cancelButton" class="bg-gray-200 dark:bg-gray-700 text-gray-800 dark:text-gray-200 font-bold py-3 px-6 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 hidden">Abbrechen</button>
+                <button id="saveButton" class="bg-teal-600 text-white font-bold py-3 px-8 rounded-md hover:bg-teal-700">Speichern</button>
+            </div>
+        </div>
+        
+        <div class="bg-white dark:bg-gray-900 p-6 rounded-lg border border-gray-200 dark:border-gray-700">
+             <div class="flex justify-between items-center mb-4">
+                <h2 class="text-2xl font-semibold">Gespeicherte Einträge</h2>
+                <div class="flex gap-2">
+                    <button id="deleteSelectedButton" class="bg-red-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-red-700 hidden">Auswahl löschen</button>
+                    <button id="exportButton" class="bg-gray-700 text-white font-semibold py-2 px-4 rounded-md hover:bg-gray-800">Export</button>
+                </div>
+            </div>
+            <div class="overflow-x-auto">
+                <table class="min-w-full divide-y divide-gray-200 dark:divide-gray-700">
+                    <thead class="bg-gray-50 dark:bg-gray-800">
+                        <tr>
+                            <th class="px-2 py-3"><input type="checkbox" id="selectAllCheckbox" class="rounded"></th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Datum</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Auftrags-Nr.</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Beschreibung</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Dauer</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Material (€)</th>
+                            <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Gesamt (€)</th>
+                            <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 dark:text-gray-400 uppercase">Aktionen</th>
+                        </tr>
+                    </thead>
+                    <tbody id="dataTable" class="dark:bg-gray-900 divide-y dark:divide-gray-700"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Camera Overlay -->
+    <div id="cameraOverlay" class="fixed inset-0 z-50 flex-col items-center justify-center hidden">
+        <video id="cameraFeed" class="absolute top-0 left-0 w-full h-full object-cover" playsinline autoplay></video>
+        <div id="cameraTarget" class="relative w-[80%] h-[20%] max-h-48 rounded-lg"></div>
+        <p id="ocr-status-camera" class="relative text-white mt-4 p-2 bg-black/50 rounded-md"></p>
+        <div class="absolute bottom-8 flex gap-4">
+            <button id="scanButton" class="w-20 h-20 bg-white rounded-full border-4 border-black/50"></button>
+            <button id="closeCameraButton" class="absolute right-[-80px] top-1/2 -translate-y-1/2 bg-white/20 text-white p-3 rounded-full">Schließen</button>
+        </div>
+    </div>
+
+    <!-- Modals -->
+    <div id="deleteModal" class="fixed inset-0 bg-black bg-opacity-60 z-50 hidden items-center justify-center"><div class="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-700 p-6 w-full max-w-md mx-4"><h3 class="text-lg font-bold">Eintrag löschen</h3><p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Möchten Sie diesen Eintrag wirklich löschen?</p><div class="mt-6 flex justify-end gap-4"><button id="cancelDelete" class="bg-gray-200 dark:bg-gray-700 font-semibold py-2 px-4 rounded-md">Abbrechen</button><button id="confirmDelete" class="bg-red-600 text-white font-semibold py-2 px-4 rounded-md">Löschen</button></div></div></div>
+    <div id="addTimeToEntryModal" class="fixed inset-0 bg-black bg-opacity-60 z-50 hidden items-center justify-center"><div class="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-700 p-6 w-full max-w-md mx-4"><h3 class="text-lg font-bold">Auftrag existiert bereits</h3><p class="mt-2 text-sm text-gray-600 dark:text-gray-400">Ein Eintrag für die Auftragsnummer <b id="existingOrderNumber"></b> existiert bereits. Was möchten Sie tun?</p><div class="mt-6 flex flex-col sm:flex-row justify-end gap-4"><button id="cancelAdd" class="bg-gray-200 dark:bg-gray-700 font-semibold py-2 px-4 rounded-md">Abbrechen</button><button id="createNewEntry" class="bg-teal-600 text-white font-semibold py-2 px-4 rounded-md">Neuen Eintrag erstellen</button><button id="addToExistingEntry" class="bg-sky-600 text-white font-semibold py-2 px-4 rounded-md">Zum bestehenden hinzufügen</button></div></div></div>
+    <div id="selectOrderModal" class="fixed inset-0 bg-black bg-opacity-60 z-50 hidden items-center justify-center">
+        <div class="bg-white dark:bg-gray-900 rounded-lg border dark:border-gray-700 p-6 w-full max-w-md mx-4">
+            <div class="flex justify-between items-center mb-4">
+                <h3 class="text-lg font-bold">Auftragsnummer auswählen</h3>
+                <button id="closeSelectOrderModal" class="text-gray-500 hover:text-gray-800 dark:hover:text-gray-200">&times;</button>
+            </div>
+            <div id="orderNumberList" class="max-h-64 overflow-y-auto">
+                <!-- List items will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function() {
+            // --- PWA SETUP ---
+            const manifest = {
+                "name": "Heinrich Zeiterfassung", "short_name": "HZ Erfassung", "start_url": ".", "display": "standalone", "background_color": "#000000", "theme_color": "#000000", "description": "Zeiterfassung für Heinrich Metallbau.",
+                "icons": [ { "src": "https://placehold.co/192x192/0d9488/FFFFFF?text=HZ", "type": "image/png", "sizes": "192x192" }, { "src": "https://placehold.co/512x512/0d9488/FFFFFF?text=HZ", "type": "image/png", "sizes": "512x512" } ]
+            };
+            const manifestURL = URL.createObjectURL(new Blob([JSON.stringify(manifest)], { type: 'application/json' }));
+            document.querySelector('link[rel="manifest"]').setAttribute('href', manifestURL);
+
+            // --- DOM Elements ---
+            const auftragsnummerInput = document.getElementById('auftragsnummer'); const startCameraButton = document.getElementById('startCameraButton'); const uploadButton = document.getElementById('uploadButton'); const imageUpload = document.getElementById('imageUpload'); const ocrStatusMain = document.getElementById('ocr-status-main'); const cameraOverlay = document.getElementById('cameraOverlay'); const cameraFeed = document.getElementById('cameraFeed'); const scanButton = document.getElementById('scanButton'); const closeCameraButton = document.getElementById('closeCameraButton'); const ocrStatusCamera = document.getElementById('ocr-status-camera'); const formTitle = document.getElementById('form-title'); const editingEntryIdInput = document.getElementById('editingEntryId'); const beschreibungInput = document.getElementById('beschreibung'); const dauerInput = document.getElementById('dauer'); const stundensatzSelect = document.getElementById('stundensatz'); const materialInput = document.getElementById('material'); const saveButton = document.getElementById('saveButton'); const cancelButton = document.getElementById('cancelButton'); const exportButton = document.getElementById('exportButton'); const dataTable = document.getElementById('dataTable'); const darkModeToggle = document.getElementById('darkModeToggle'); const moonIcon = document.getElementById('moonIcon'); const sunIcon = document.getElementById('sunIcon');
+            const deleteModal = document.getElementById('deleteModal'); const cancelDeleteBtn = document.getElementById('cancelDelete'); const confirmDeleteBtn = document.getElementById('confirmDelete');
+            const addTimeToEntryModal = document.getElementById('addTimeToEntryModal'); const cancelAddBtn = document.getElementById('cancelAdd'); const createNewEntryBtn = document.getElementById('createNewEntry'); const addToExistingEntryBtn = document.getElementById('addToExistingEntry'); const existingOrderNumberSpan = document.getElementById('existingOrderNumber');
+            const selectAllCheckbox = document.getElementById('selectAllCheckbox'); const deleteSelectedButton = document.getElementById('deleteSelectedButton');
+            const selectOrderButton = document.getElementById('selectOrderButton'); const selectOrderModal = document.getElementById('selectOrderModal'); const closeSelectOrderModal = document.getElementById('closeSelectOrderModal'); const orderNumberList = document.getElementById('orderNumberList');
+            
+            let entryToDeleteId = null;
+            let temporaryEntryData = null;
+            let existingEntryToUpdate = null;
+            let selectedEntries = new Set();
+
+            // --- Dark Mode ---
+            function setDarkMode(isDark) { document.documentElement.classList.toggle('dark', isDark); moonIcon.classList.toggle('hidden', isDark); sunIcon.classList.toggle('hidden', !isDark); localStorage.setItem('heinrich-zeiterfassung-darkMode', isDark ? 'enabled' : 'disabled'); }
+            darkModeToggle.addEventListener('click', () => setDarkMode(!document.documentElement.classList.contains('dark')));
+            setDarkMode(localStorage.getItem('heinrich-zeiterfassung-darkMode') === 'enabled' || (!('heinrich-zeiterfassung-darkMode' in localStorage) && window.matchMedia('(prefers-color-scheme: dark)').matches));
+
+            // --- Number Formatting ---
+            const toFloat = str => parseFloat(String(str).replace(/,/, '.'));
+            const formatDecimal = num => (num || 0).toFixed(2).replace('.', ',');
+
+             // --- OCR Processing ---
+            async function processImageForOCR(imageSource, statusElement) {
+                statusElement.innerHTML = '<div class="spinner-main"></div>Analysiere...';
+                try {
+                    const worker = await Tesseract.createWorker('deu');
+                    await worker.setParameters({ tessedit_char_whitelist: '0123456789' });
+                    const { data: { text } } = await worker.recognize(imageSource);
+                    await worker.terminate();
+                    const numberRegex = /\b(1\d{7}|22\d{6})\b/g;
+                    const numbersFound = text.match(numberRegex);
+                    if (numbersFound && numbersFound.length > 0) {
+                        auftragsnummerInput.value = numbersFound[0];
+                        statusElement.textContent = "Nummer erfolgreich gefunden!";
+                    } else { statusElement.textContent = "Keine passende Nummer gefunden."; }
+                } catch (error) { console.error("OCR Fehler:", error); statusElement.textContent = "Erkennung fehlgeschlagen."; }
+                setTimeout(() => { if(statusElement) statusElement.textContent = ""}, 2000);
+            }
+
+            // --- Camera Logic ---
+            let stream = null;
+            startCameraButton.addEventListener('click', async () => {
+                if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) { alert("Kamera wird von diesem Browser nicht unterstützt."); return; }
+                try { stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } }); cameraFeed.srcObject = stream; cameraOverlay.classList.remove('hidden'); cameraOverlay.classList.add('flex'); } catch (err) { console.error("Kamera-Fehler:", err); alert("Kamerazugriff fehlgeschlagen. Bitte Berechtigung erteilen."); }
+            });
+            function stopCamera() { if (stream) { stream.getTracks().forEach(track => track.stop()); } cameraOverlay.classList.add('hidden'); cameraOverlay.classList.remove('flex'); ocrStatusCamera.innerHTML = ""; }
+            closeCameraButton.addEventListener('click', stopCamera);
+            scanButton.addEventListener('click', async () => { const canvas = document.createElement('canvas'); canvas.width = cameraFeed.videoWidth; canvas.height = cameraFeed.videoHeight; canvas.getContext('2d').drawImage(cameraFeed, 0, 0, canvas.width, canvas.height); stopCamera(); await processImageForOCR(canvas, ocrStatusMain); });
+
+            // --- Upload Logic ---
+            uploadButton.addEventListener('click', () => imageUpload.click());
+            imageUpload.addEventListener('change', async (event) => { const file = event.target.files[0]; if (!file) return; await processImageForOCR(file, ocrStatusMain); imageUpload.value = ''; });
+
+            // --- Local Storage Logic ---
+            const STORAGE_KEY = 'heinrich-zeiterfassung-entries';
+            function getEntries() { const e = localStorage.getItem(STORAGE_KEY); if (!e) return []; return JSON.parse(e).map(entry => { entry.createdAt = new Date(entry.createdAt); return entry; });}
+            function saveEntries(e) { localStorage.setItem(STORAGE_KEY, JSON.stringify(e)); }
+            function loadAndRender() { const e = getEntries().sort((a,b) => b.createdAt.getTime()-a.createdAt.getTime()); renderTable(e); }
+
+            function resetForm() { formTitle.textContent = 'Neuer Eintrag'; saveButton.textContent = 'Speichern'; saveButton.classList.replace('bg-amber-500', 'bg-teal-600'); editingEntryIdInput.value = ''; auftragsnummerInput.value = ''; beschreibungInput.value = ''; dauerInput.value = ''; stundensatzSelect.selectedIndex = 0; materialInput.value = ''; cancelButton.classList.add('hidden'); }
+            cancelButton.addEventListener('click', resetForm);
+
+            // --- Save Logic ---
+            saveButton.addEventListener('click', () => {
+                const entryData = {
+                    auftragsnummer: auftragsnummerInput.value.trim(),
+                    beschreibung: beschreibungInput.value.trim(),
+                    dauer: toFloat(dauerInput.value) || 0,
+                    stundensatz: toFloat(stundensatzSelect.value),
+                    material: toFloat(materialInput.value) || 0,
+                };
+
+                if (!entryData.auftragsnummer || entryData.dauer <= 0) { alert("Auftragsnummer und Dauer sind erforderlich."); return; }
+
+                const editingId = editingEntryIdInput.value;
+                if (editingId) {
+                    let entries = getEntries();
+                    const entryIndex = entries.findIndex(e => e.id == editingId);
+                    if (entryIndex > -1) { entries[entryIndex] = { ...entries[entryIndex], ...entryData }; }
+                    saveEntries(entries);
+                    loadAndRender();
+                    resetForm();
+                    return;
+                }
+
+                const entries = getEntries();
+                const existingEntry = entries.find(e => e.auftragsnummer === entryData.auftragsnummer);
+                if (existingEntry) {
+                    temporaryEntryData = entryData;
+                    existingEntryToUpdate = existingEntry;
+                    existingOrderNumberSpan.textContent = entryData.auftragsnummer;
+                    addTimeToEntryModal.classList.remove('hidden');
+                    addTimeToEntryModal.classList.add('flex');
+                } else {
+                    entryData.id = Date.now();
+                    entryData.createdAt = new Date();
+                    entries.push(entryData);
+                    saveEntries(entries);
+                    loadAndRender();
+                    resetForm();
+                }
+            });
+
+            // --- Add Time Modal Logic ---
+            cancelAddBtn.addEventListener('click', () => { addTimeToEntryModal.classList.add('hidden'); });
+            createNewEntryBtn.addEventListener('click', () => {
+                let entries = getEntries();
+                temporaryEntryData.id = Date.now();
+                temporaryEntryData.createdAt = new Date();
+                entries.push(temporaryEntryData);
+                saveEntries(entries);
+                loadAndRender();
+                resetForm();
+                addTimeToEntryModal.classList.add('hidden');
+            });
+            addToExistingEntryBtn.addEventListener('click', () => {
+                let entries = getEntries();
+                const entryIndex = entries.findIndex(e => e.id == existingEntryToUpdate.id);
+                if (entryIndex > -1) {
+                    entries[entryIndex].dauer += temporaryEntryData.dauer;
+                    entries[entryIndex].material += temporaryEntryData.material;
+                    if(temporaryEntryData.beschreibung){
+                         entries[entryIndex].beschreibung = entries[entryIndex].beschreibung ? `${entries[entryIndex].beschreibung}; ${temporaryEntryData.beschreibung}` : temporaryEntryData.beschreibung;
+                    }
+                }
+                saveEntries(entries);
+                loadAndRender();
+                resetForm();
+                addTimeToEntryModal.classList.add('hidden');
+            });
+
+            // --- Select Order Modal Logic ---
+            selectOrderButton.addEventListener('click', () => {
+                const entries = getEntries();
+                const uniqueOrders = [...new Set(entries.map(e => e.auftragsnummer))].sort();
+                orderNumberList.innerHTML = '';
+                if (uniqueOrders.length === 0) {
+                    orderNumberList.innerHTML = `<p class="text-gray-500">Keine vorhandenen Nummern.</p>`;
+                } else {
+                    uniqueOrders.forEach(order => {
+                        const item = document.createElement('div');
+                        item.textContent = order;
+                        item.className = 'p-2 rounded-md cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-800';
+                        item.addEventListener('click', () => {
+                            auftragsnummerInput.value = order;
+                            selectOrderModal.classList.add('hidden');
+                        });
+                        orderNumberList.appendChild(item);
+                    });
+                }
+                selectOrderModal.classList.remove('hidden');
+                selectOrderModal.classList.add('flex');
+            });
+            closeSelectOrderModal.addEventListener('click', () => selectOrderModal.classList.add('hidden'));
+
+            // --- Render Table ---
+            function renderTable(entries) {
+                dataTable.innerHTML = '';
+                if (entries.length === 0) { dataTable.innerHTML = `<tr><td colspan="8" class="text-center py-8 text-gray-500">Keine Einträge.</td></tr>`; return; }
+                entries.forEach(entry => {
+                    const totalCost = (entry.dauer * entry.stundensatz) + (entry.material || 0);
+                    const row = document.createElement('tr');
+                    row.className = "hover:bg-gray-50 dark:hover:bg-gray-800/50";
+                    row.innerHTML = `
+                        <td class="px-2 py-4"><input type="checkbox" data-id="${entry.id}" class="row-checkbox rounded"></td>
+                        <td class="px-6 py-4 text-sm">${new Date(entry.createdAt).toLocaleDateString('de-DE')}</td>
+                        <td class="px-6 py-4 font-medium dark:text-white">${entry.auftragsnummer}</td>
+                        <td class="px-6 py-4 text-sm truncate max-w-xs">${entry.beschreibung || '-'}</td>
+                        <td class="px-6 py-4 text-sm">${formatDecimal(entry.dauer)}</td>
+                        <td class="px-6 py-4 text-sm">${formatDecimal(entry.material)}</td>
+                        <td class="px-6 py-4 text-sm">${formatDecimal(totalCost)}</td>
+                        <td class="px-6 py-4 text-right text-sm space-x-4">
+                            <button data-id="${entry.id}" class="edit-btn text-teal-600 hover:text-teal-800 dark:text-teal-400">Bearbeiten</button>
+                            <button data-id="${entry.id}" class="delete-btn text-red-600 hover:text-red-800 dark:text-red-400">Löschen</button>
+                        </td>`;
+                    dataTable.appendChild(row);
+                });
+            }
+            
+            // --- Table Interaction Logic ---
+            dataTable.addEventListener('click', (e) => {
+                const entryId = e.target.dataset.id;
+                if (!entryId) return;
+
+                if (e.target.classList.contains('edit-btn')) {
+                    const entry = getEntries().find(en => en.id == entryId);
+                    if (!entry) return;
+                    formTitle.textContent = 'Eintrag bearbeiten'; saveButton.textContent = 'Ändern'; saveButton.classList.replace('bg-teal-600', 'bg-amber-500'); cancelButton.classList.remove('hidden');
+                    editingEntryIdInput.value = entry.id; auftragsnummerInput.value = entry.auftragsnummer; beschreibungInput.value = entry.beschreibung || ''; dauerInput.value = formatDecimal(entry.dauer); stundensatzSelect.value = entry.stundensatz.toFixed(2); materialInput.value = formatDecimal(entry.material); window.scrollTo({ top: 0, behavior: 'smooth' });
+                }
+                
+                if (e.target.classList.contains('delete-btn')) { entryToDeleteId = entryId; deleteModal.classList.remove('hidden'); deleteModal.classList.add('flex'); }
+
+                if (e.target.classList.contains('row-checkbox')) {
+                    const id = parseInt(e.target.dataset.id);
+                    if (e.target.checked) { selectedEntries.add(id); } else { selectedEntries.delete(id); }
+                    updateMultiDeleteUI();
+                }
+            });
+
+            // --- Single & Multi Delete Logic ---
+            cancelDeleteBtn.addEventListener('click', () => { deleteModal.classList.add('hidden'); });
+            confirmDeleteBtn.addEventListener('click', () => {
+                if (!entryToDeleteId) return;
+                let entries = getEntries().filter(e => e.id != entryToDeleteId);
+                saveEntries(entries); loadAndRender(); deleteModal.classList.add('hidden');
+            });
+            
+            function updateMultiDeleteUI() {
+                if (selectedEntries.size > 0) {
+                    deleteSelectedButton.classList.remove('hidden');
+                    deleteSelectedButton.textContent = `Auswahl löschen (${selectedEntries.size})`;
+                } else {
+                    deleteSelectedButton.classList.add('hidden');
+                }
+                selectAllCheckbox.checked = selectedEntries.size > 0 && selectedEntries.size === getEntries().length;
+            }
+
+            selectAllCheckbox.addEventListener('click', (e) => {
+                const isChecked = e.target.checked;
+                const checkboxes = document.querySelectorAll('.row-checkbox');
+                const entries = getEntries();
+                selectedEntries.clear();
+                checkboxes.forEach(cb => {
+                    cb.checked = isChecked;
+                    if(isChecked) { selectedEntries.add(parseInt(cb.dataset.id)); }
+                });
+                updateMultiDeleteUI();
+            });
+
+            deleteSelectedButton.addEventListener('click', () => {
+                if(selectedEntries.size === 0) return;
+                if(confirm(`Möchten Sie wirklich ${selectedEntries.size} Einträge löschen?`)){
+                    let entries = getEntries().filter(e => !selectedEntries.has(e.id));
+                    saveEntries(entries);
+                    selectedEntries.clear();
+                    loadAndRender();
+                    updateMultiDeleteUI();
+                }
+            });
+            
+            // --- Export Logic ---
+            exportButton.addEventListener('click', () => {
+                const entries = getEntries();
+                if (entries.length === 0) { alert("Keine Daten zum Exportieren."); return; }
+                let csv = "Datum;Auftrags-Nr.;Beschreibung;Dauer (Std);Stundensatz (€);Material (€);Gesamtkosten (€)\n";
+                entries.forEach(e => {
+                    const total = (e.dauer * e.stundensatz) + (e.material || 0);
+                    csv += [new Date(e.createdAt).toLocaleDateString('de-DE'), e.auftragsnummer, e.beschreibung || '', formatDecimal(e.dauer), formatDecimal(e.stundensatz), formatDecimal(e.material), formatDecimal(total)].map(v => `"${String(v).replace(/"/g, '""')}"`).join(';') + "\n";
+                });
+                const link = document.createElement("a");
+                link.href = 'data:text/csv;charset=utf-8,' + encodeURI(csv);
+                link.download = `heinrich_zeiterfassung_${new Date().toISOString().split('T')[0]}.csv`;
+                link.click();
+            });
+
+            // Initial load
+            loadAndRender();
+        })();
+    </script>
+</body>
+</html>
